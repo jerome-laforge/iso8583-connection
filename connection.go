@@ -376,17 +376,11 @@ func (c *Connection) Send(message *iso8583.Message) (*iso8583.Message, error) {
 		// if we have UnmatchedMessageHandler set, then we want reply
 		// to not be lost but handled by it.
 		if c.Opts.InboundMessageHandler != nil {
-			go func() {
-				oneMoreSecondTimer := time.NewTimer(time.Second)
-				defer oneMoreSecondTimer.Stop()
-
+			defer func() {
 				select {
 				case resp := <-req.replyCh:
 					go c.Opts.InboundMessageHandler(c, resp)
-				case <-oneMoreSecondTimer.C:
-					// if no reply received within 1 second
-					// we return from the goroutine
-					return
+				default:
 				}
 			}()
 		}
@@ -608,12 +602,15 @@ func (c *Connection) handleResponse(rawMessage []byte) {
 
 		// send response message to the reply channel
 		c.pendingRequestsMu.Lock()
-		response, found := c.respMap[reqID]
+		if response, found := c.respMap[reqID]; found {
+			response.replyCh <- message
+			c.pendingRequestsMu.Unlock()
+
+			return
+		}
 		c.pendingRequestsMu.Unlock()
 
-		if found {
-			response.replyCh <- message
-		} else if c.Opts.InboundMessageHandler != nil {
+		if c.Opts.InboundMessageHandler != nil {
 			go c.Opts.InboundMessageHandler(c, message)
 		} else {
 			c.handleError(fmt.Errorf("can't find request for ID: %s", reqID))
