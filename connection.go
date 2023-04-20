@@ -373,17 +373,18 @@ func (c *Connection) Send(message *iso8583.Message) (*iso8583.Message, error) {
 	case <-sendTimeoutTimer.C:
 		err = ErrSendTimeout
 		// reply can still be sent after SendTimeout received.
-		// if we have UnmatchedMessageHandler set, then we want reply
-		// to not be lost but handled by it.
-		if c.Opts.InboundMessageHandler != nil {
-			defer func() {
-				select {
-				case resp := <-req.replyCh:
+		// if we have InboundMessageHandler set, then we want reply
+		// to be handled by it.
+		defer func() {
+			select {
+			case resp := <-req.replyCh:
+				if c.Opts.InboundMessageHandler != nil {
 					go c.Opts.InboundMessageHandler(c, resp)
-				default:
 				}
-			}()
-		}
+			default:
+				return
+			}
+		}()
 	}
 
 	c.pendingRequestsMu.Lock()
