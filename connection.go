@@ -604,6 +604,9 @@ func (c *Connection) handleResponse(rawMessage []byte) {
 		// send response message to the reply channel
 		c.pendingRequestsMu.Lock()
 		if response, found := c.respMap[reqID]; found {
+			// As replyCh is buffered channel with size of 1. This write will never be blocking one.
+			// So we can write into channel with protection of the mutex in order to ensure
+			// that we never lost incoming response even on race condition with removing the requestID from c.respMap.
 			response.replyCh <- message
 			c.pendingRequestsMu.Unlock()
 
